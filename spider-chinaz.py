@@ -4,7 +4,6 @@ from collections import deque
 from urllib import parse
 import csv, zlib, time
 
-
 def is_number(s):
     """
     判断一个字符串是否是数字
@@ -27,14 +26,11 @@ def is_number(s):
     return False
 
 class Spider:
-
     initUrl = None  #初始页面
     UrlList = deque() #待爬取Url列队
     csvFileName = '' #CSV生成路径
-    dataList = []  #爬取后的数据存储列表
-
+    # dataList = []  #爬取后的数据存储列表
     def __init__(self, initUrl, csvFileName):
-
         """
         构造函数
         :param initUrl: 爬取的第一个页面
@@ -43,6 +39,9 @@ class Spider:
         self.UrlList.append(initUrl)
         self.initUrl = initUrl
         self.csvFileName = csvFileName
+        # 创建CSV文件并写入头部信息
+        self.toCSV('w+', ['排名', '名字', '地址', '类型', '地区'])
+
 
     def getHtml(self,Url):
         """
@@ -50,7 +49,6 @@ class Spider:
         :param Url: 页面url
         :return: html文本内容
         """
-
         #设置HTTP头部字段
         req = request.Request(Url)
         req.add_header('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8')
@@ -62,13 +60,10 @@ class Spider:
         with request.urlopen(req) as f:
             gzipped = f.headers.get('Content-Encoding')
             html = f.read()
-
             #如果返回的页面是gzip压缩后的内容，解压才能正常解析
             if gzipped:
                 html = zlib.decompress(html, 16 + zlib.MAX_WBITS)
-
             return html.decode('utf-8')
-
 
     def parseHtmlLevel1(self,html):
         """
@@ -80,11 +75,14 @@ class Spider:
         dom = BeautifulSoup(html, 'html.parser')
         eleThisPage = dom.find('div', {'class':'ListPageWrap'}).find('a', {'class':'Pagecurt'})
 
-        # 根据当前分页页码，获取下一个页码，并且加入到待爬取Url列队
+        # 根据当前分页页码
         nextPageEle = eleThisPage.next_sibling
+
+        # 获取下一页的页码
         nextPageNum = nextPageEle.get_text()
         if(is_number(nextPageNum)):
-            self.UrlList.append(parse.urljoin(self.initUrl, nextPageEle.attrs['href']))
+            # 加入到待爬取Url列队
+            self.UrlList.append(parse.urljoin(self.initUrl, nextPageEle.attrs['href'])) 
 
         # 提取第一层网站排名信息
         siteLists = dom.find('ul', {'class':'listCentent'}).find_all('li')
@@ -98,16 +96,17 @@ class Spider:
                 # 如果出现排名获取失败的情况，替代的文本
                 rank = 'uncache'
 
+            print("正在爬取第" + str(int(nextPageNum) - 1) + "页, " + "第" + rank + "名数据")
+
             # 获取网站排名中网站更详细的信息(第二层页面)
             urlLevel2 = siteEle.find('div', {'class':'leftImg'}).find('a').attrs['href']
             urlLevel2 = parse.urljoin(self.initUrl, urlLevel2)
-
-
 
             htmlLevel2 = self.getHtml(urlLevel2)
 
             #如果获取不成功，循环抓取HTML
             while(not htmlLevel2):
+                print("获取网站排名信息错误")
                 htmlLevel2 = self.getHtml(urlLevel2)
 
             #提取第二层页面中的数据,并加入到数据存储列表
@@ -116,15 +115,12 @@ class Spider:
             data.append(rank)
             data.extend(list(dataLevel2))
 
-            self.dataList.append(data)
+            # 将数据写入CSV文件
+            self.toCSV('a+', data)
 
             #显示爬取进度
             print(data)
             # time.sleep(2)
-
-
-
-
 
     def parseHtmlLevel2(self, html):
         """
@@ -137,7 +133,11 @@ class Spider:
         header = dom.find('div', {'class':'TPageCent-header'})
 
         siteName = header.find('h2', {'class':'h2Title'}).get_text()
-        siteUrl = header.find('a').attrs['href']
+        siteUrlElement = header.find('a')
+        if siteUrlElement is not None:
+            siteUrl = siteUrlElement.attrs['href']
+        else:
+            siteUrl = 'URL not found'
 
         # 获取网站分类和网站地区信息
         eleTagOne = dom.find('div', {'class':'Tagone'})
@@ -158,17 +158,14 @@ class Spider:
         # 返回信息
         return (siteName, siteUrl, siteType, siteArea)
 
-    def toCSV(self):
+    def toCSV(self, mode, data):
         """
-        生成csv文件
+        保存数据到csv文件
         :return: None
         """
-        with open(self.csvFileName, 'w+', encoding='utf-8') as csvfile:
+        with open(self.csvFileName, mode, encoding='utf-8', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(['排名', '名字', '地址', '类型', '地区'])
-
-            for row in self.dataList:
-                writer.writerow(row)
+            writer.writerow(data)
 
     def run(self):
         """
@@ -176,26 +173,13 @@ class Spider:
         :return: None
         """
         while len(self.UrlList):
-
             url = self.UrlList.popleft()
             html = self.getHtml(url)
-
             while (not html):
                 html = self.getHtml(url)
-
             self.parseHtmlLevel1(html)
-
-        self.toCSV()
-
-
 
 
 # 执行演示
-objSpider = Spider('http://top.chinaz.com/hangye/index_jiaotonglvyou.html', 'test.csv')
+objSpider = Spider('https://top.chinaz.com/all/', 'test.csv')
 objSpider.run()
-
-
-
-
-
-
